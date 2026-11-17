@@ -20,8 +20,12 @@ jobs:
       - name: Install ldid
         run: brew install ldid
 
+      - name: Make devkit executable
+        run: chmod +x devkit/*.sh
+
       - name: Build tipa
         run: |
+          set -o pipefail
           export THEOS=$HOME/theos
           make package FINALPACKAGE=1 2>&1 | tee build.log
 
@@ -33,7 +37,9 @@ jobs:
           echo "NAME=SLTrollFools-${VERSION}-${BUILD}" >> $GITHUB_ENV
           mkdir -p out
           ls -la packages
-          cp packages/*.tipa "out/SLTrollFools-${VERSION}-${BUILD}.tipa"
+          TIPA=$(find packages -maxdepth 1 -name '*.tipa' | head -1)
+          test -n "$TIPA" || { echo "no tipa produced"; exit 1; }
+          cp "$TIPA" "out/SLTrollFools-${VERSION}-${BUILD}.tipa"
           unzip -l "out/SLTrollFools-${VERSION}-${BUILD}.tipa" | head -30
 
       - name: Upload tipa
