@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Xcode / Theos build artifacts
+build/
+packages/
+*.tipa
+*.deb
+*.o
+.deps/
+.Deps/
+
+# Theos
+.theos/
+.layout/
+_obj/
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# IDE
+.idea/
+.vscode/
+
+# Temp
+*.tmp
+*.log

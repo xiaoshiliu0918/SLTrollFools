@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>石榴注入 · KFD 画面 + HGhubX 动效</title>
+<style>
+:root{
+  --bg:#07080B; --card:#0E1014; --card2:#16191F; --oncard:#0F2B22;
+  --line:rgba(255,255,255,.065);
+  --text:#F2F4F8; --sub:#8E96AA; --weak:#61697C; --faint:#3E4552;
+  --green:#35E0A1; --red:#FF6E78; --ink:#0A0C10; --ongreen:#061611;
+  /* HGhubX 的弹性曲线 */
+  --spring:cubic-bezier(.34,1.56,.64,1);
+  --spring-soft:cubic-bezier(.22,1.28,.36,1);
+  --press:55ms;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{
+  background:#030405;color:var(--text);min-height:100vh;padding:26px 20px 48px;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;
+  display:flex;flex-direction:column;align-items:center;
+}
+.head{width:100%;max-width:1180px;display:flex;align-items:flex-end;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.head h1{font-size:16px;font-weight:640;letter-spacing:-.02em}
+.head p{font-size:11.5px;color:var(--weak);line-height:1.6}
+.head .tag{font-size:9.5px;font-weight:700;letter-spacing:.1em;padding:3px 7px;border-radius:5px;
+  border:1px solid var(--line);color:var(--faint)}
+.head .tag.on{color:var(--green);border-color:rgba(53,224,161,.3);background:rgba(53,224,161,.07)}
+.btn-replay{margin-left:auto;font-size:11.5px;font-weight:600;color:var(--sub);cursor:pointer;
+  border:1px solid var(--line);background:var(--card);border-radius:9px;padding:7px 13px;
+  transition:scale .24s var(--spring),color .2s,border-color .2s}
+.btn-replay:hover{color:var(--green);border-color:rgba(53,224,161,.3)}
+.btn-replay:active{scale:.965;transition-duration:var(--press)}
+
+.stage{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+.phone{
+  position:relative;width:372px;height:812px;border-radius:44px;overflow:hidden;flex:none;
+  background:var(--bg);
+  box-shadow:0 50px 120px -40px #000,0 0 0 1px rgba(255,255,255,.07);
+}
+.glow{position:absolute;inset:0;pointer-events:none;background:
+  radial-gradient(58% 34% at 18% -2%,rgba(53,224,161,.13),transparent 70%),
+  radial-gradient(48% 28% at 88% 3%,rgba(70,120,255,.11),transparent 70%)}
+.app{position:absolute;inset:0;display:flex;flex-direction:column;padding:0 16px}
+
+/* 状态栏 */
+.sb{flex:none;height:50px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 6px;font-size:14px;font-weight:600;letter-spacing:-.01em}
+.sb .ic{display:flex;align-items:center;gap:5px;opacity:.95}
+
+/* 顶栏 */
+.hd{flex:none;height:56px;display:flex;align-items:center;gap:10px}
+.logo{width:32px;height:32px;border-radius:9px;flex:none;display:grid;place-items:center;
+  background:var(--card);border:1px solid var(--line);position:relative}
+.logo i{width:9px;height:9px;border-radius:2px;background:var(--green);transform:rotate(45deg);
+  box-shadow:0 0 9px rgba(53,224,161,.85);display:block}
+.tt{flex:1;min-width:0}
+.tt b{display:block;font-size:14px;font-weight:600;letter-spacing:-.012em;line-height:1.15}
+.tt span{display:block;font-size:8.6px;font-weight:700;letter-spacing:1.1px;color:var(--faint);margin-top:2px}
+.rbtn{width:32px;height:32px;border-radius:50%;flex:none;display:grid;place-items:center;
+  border:1px solid var(--line);background:var(--card);color:var(--sub);transition:.2s}
+.rbtn.on{color:var(--green);border-color:rgba(53,224,161,.4)}
+
+/* 白色药丸分页 */
+.seg{flex:none;position:relative;display:flex;gap:3px;padding:3px;border-radius:14px;
+  background:var(--card);border:1px solid var(--line);margin-bottom:11px}
+.seg .pill{
+  position:absolute;top:3px;bottom:3px;border-radius:11px;background:var(--text);
+  box-shadow:0 2px 6px rgba(0,0,0,.35);z-index:0;will-change:transform,width,left;
+  transition:transform .34s var(--spring),width .34s var(--spring),left .34s var(--spring);
+}
+.seg button{
+  position:relative;z-index:1;flex:1;height:34px;border:0;background:transparent;cursor:pointer;
+  font:600 13.5px/1 -apple-system,"PingFang SC",sans-serif;color:var(--weak);
+  transition:color .16s ease,scale .24s var(--spring);border-radius:11px;
+}
+.seg button.on{color:var(--ink)}
+.seg button:active{scale:.97;transition-duration:var(--press)}
+
+/* 通用 */
+.body{flex:1;min-height:0;overflow:hidden;position:relative}
+.stack{display:flex;flex-direction:column;gap:11px;padding-top:3px}
+
+.search{display:flex;align-items:center;gap:8px;height:44px;padding:0 13px;border-radius:13px;
+  background:var(--card);border:1px solid var(--line)}
+.search svg{flex:none;color:var(--weak)}
+.search input{flex:1;min-width:0;border:0;background:transparent;outline:0;
+  font:400 14px -apple-system,"PingFang SC",sans-serif;color:var(--text)}
+.search input::placeholder{color:var(--weak)}
+
+.chips{display:flex;gap:7px;overflow:hidden}
+.chip{height:30px;padding:0 13px;border-radius:999px;display:flex;align-items:center;flex:none;
+  font:600 12px -apple-system,"PingFang SC",sans-serif;color:var(--weak);
+  background:var(--card);border:1px solid var(--line);
+  transition:background-color .16s,color .16s,scale .24s var(--spring),border-color .16s}
+.chip.on{background:var(--text);color:var(--ink);border-color:transparent}
+.chip:active{scale:.94;transition-duration:var(--press)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.card>.row{display:flex;align-items:center;gap:10px;padding:9px 13px;transition:background-color .2s}
+.card>.row.sel{background:rgba(53,224,161,.055)}
+.sep{height:1px;background:var(--line);margin-left:62px}
+
+.icon{width:38px;height:38px;border-radius:10px;flex:none;display:grid;place-items:center;
+  font-size:15px;font-weight:700;color:#fff;box-shadow:inset 0 0 0 .8px rgba(255,255,255,.1)}
+.nm{flex:1;min-width:0}
+.nm b{display:block;font-size:14px;font-weight:600;letter-spacing:-.01em;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nm span{display:block;font-size:10.5px;color:var(--weak);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tick{width:20px;height:20px;border-radius:50%;flex:none;border:1.5px solid var(--faint);
+  display:grid;place-items:center;transition:scale .42s var(--spring),background-color .2s,border-color .2s}
+.tick.on{background:var(--green);border-color:var(--green);scale:1}
+.tick svg{opacity:0;transition:opacity .12s}
+.tick.on svg{opacity:1}
+.star{width:26px;height:26px;flex:none;display:grid;place-items:center;color:var(--faint);font-size:13px;
+  transition:color .2s,scale .24s var(--spring)}
+.star.on{color:var(--green)}
+.star:active{scale:.86;transition-duration:var(--press)}
+
+/* 段落标题 */
+.sh{display:flex;align-items:center;gap:8px;padding:0 2px}
+.sh b{font-size:10.5px;font-weight:600;letter-spacing:.9px;color:var(--weak);text-transform:uppercase}
+.sh .sp{flex:1}
+.mini{height:26px;padding:0 10px;border-radius:13px;display:flex;align-items:center;gap:4px;
+  font:500 10.5px -apple-system,"PingFang SC",sans-serif;color:var(--sub);
+  background:var(--card2);border:1px solid var(--line);cursor:pointer;
+  transition:scale .24s var(--spring),color .18s}
+.mini:active{scale:.94;transition-duration:var(--press)}
+.mini:hover{color:var(--text)}
+
+/* 状态卡（主开关卡形态） */
+.status{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px;
+  transition:background-color .34s ease,border-color .34s ease}
+.status.on{background:var(--oncard);border-color:rgba(53,224,161,.24)}
+.status .top{display:flex;align-items:flex-start;gap:8px}
+.status .cap{font-size:10px;font-weight:600;letter-spacing:.6px;color:var(--faint);flex:1;padding-top:2px}
+.status .big{font-size:33px;font-weight:300;letter-spacing:-.02em;color:var(--sub);margin-top:8px;
+  line-height:1.1;transition:color .34s ease}
+.status.on .big{color:var(--text)}
+.status .hr{height:1px;background:var(--line);margin-top:14px}
+.status .ft{display:flex;align-items:center;gap:6px;margin-top:11px;font-size:11px;color:var(--sub);min-width:0}
+.status .ft .dot{width:5px;height:5px;border-radius:50%;background:var(--faint);flex:none}
+.status.on .ft .dot{background:var(--green);box-shadow:0 0 6px rgba(53,224,161,.9)}
+.status.on .ft .st{color:var(--green);font-weight:500}
+.status .ft .st{font-weight:500}
+.status .ft .sp2{color:var(--faint)}
+.status .ft .dt{color:var(--weak);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status .ico{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none;
+  background:var(--card2);font-size:13px}
+.status.on .ico{box-shadow:inset 0 0 0 1px rgba(53,224,161,.35)}
+
+/* 终端 */
+.term{background:#05080C;border:1px solid var(--line);border-radius:14px;padding:11px;
+  font:400 10.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;
+  max-height:168px;overflow:hidden}
+.term div{white-space:pre-wrap;word-break:break-all}
+.term .ts{color:var(--weak)}
+.term .ok{color:var(--green)}
+.term .er{color:var(--red)}
+.term .hi{color:rgba(242,244,248,.92)}
+.term .df{color:var(--sub)}
+
+/* 列表行卡 */
+.rcard{display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:15px;
+  background:var(--card);border:1px solid var(--line)}
+.rcard .ico{width:32px;height:32px;border-radius:10px;background:var(--card2);
+  display:grid;place-items:center;color:var(--green);font-size:13px;flex:none}
+.rcard .nm b{font-size:13.5px;font-weight:500}
+.rcard .nm span{font-size:10.5px;margin-top:1px}
+.rcard .tr{font-size:11px;font-weight:500;color:var(--faint);flex:none}
+
+/* 按钮 */
+.cta{height:52px;border-radius:15px;border:1px solid rgba(53,224,161,.5);background:var(--green);
+  color:var(--ongreen);font:600 15.5px -apple-system,"PingFang SC",sans-serif;
+  display:flex;align-items:center;justify-content:center;gap:7px;width:100%;cursor:pointer;
+  box-shadow:0 6px 24px -8px rgba(53,224,161,.55);
+  transition:scale .3s var(--spring),box-shadow .2s}
+.cta:active{scale:.965;transition-duration:var(--press)}
+.cta2{height:50px;border-radius:15px;border:1px solid var(--line);background:var(--card);color:var(--text);
+  font:500 14px -apple-system,"PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center;
+  gap:6px;width:100%;cursor:pointer;transition:scale .3s var(--spring),background-color .2s}
+.cta2:active{scale:.965;transition-duration:var(--press)}
+
+.dockbar{flex:none;position:absolute;left:0;right:0;bottom:0;padding:0 16px 22px;
+  background:linear-gradient(180deg,rgba(7,8,11,0),rgba(7,8,11,.94) 22px,#07080B 40px)}
+
+.version{font-size:10.5px;color:var(--faint);text-align:center;padding:10px 0 6px}
+.muted{font-size:11px;color:var(--faint);text-align:center}
+
+/* 分组头 */
+.gh{display:flex;align-items:center;gap:8px;padding:11px 13px;cursor:pointer;
+  transition:background-color .2s}
+.gh:active{background:rgba(255,255,255,.025)}
+.gh .cv{font-size:9px;font-weight:700;color:var(--faint);width:11px}
+.gh .t{font-size:13px;font-weight:600;color:var(--text);flex:1}
+.gh .n{font-size:10.5px;font-weight:500;color:var(--faint)}
+.prow{display:flex;align-items:center;gap:10px;padding:10px 13px;cursor:pointer;
+  transition:background-color .2s}
+.prow.sel{background:rgba(53,224,161,.055)}
+.psub{font-size:9.5px;font-weight:600;letter-spacing:.5px;color:var(--faint);margin-top:2px}
+
+/* 双按钮行 */
+.duo{display:flex;gap:9px}
+
+/* 入场动效：对应 motion-rise */
+@keyframes rise{
+  0%{opacity:0;transform:translate3d(0,14px,0) scale(.98)}
+  72%{opacity:1;transform:translate3d(0,-2px,0) scale(1.001)}
+  100%{opacity:1;transform:none}
+}
+.rise{animation:rise .44s var(--spring) both}
+@keyframes titleIn{
+  0%{opacity:0;transform:translate3d(-10px,6px,0)}
+  72%{opacity:1;transform:translate3d(2px,0,0)}
+  100%{opacity:1;transform:none}
+}
+.titlein{animation:titleIn .62s var(--spring-soft) both}
+.paused .rise,.paused .titlein{animation:none!important;opacity:1!important;transform:none!important}
+
+/* 说明条 */
+.legend{width:100%;max-width:1180px;margin-top:26px;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.lg{border:1px solid var(--line);background:rgba(14,16,20,.6);border-radius:13px;padding:13px 14px}
+.lg b{display:block;font-size:12px;font-weight:640;margin-bottom:7px;letter-spacing:-.01em}
+.lg p{font-size:11px;color:var(--weak);line-height:1.65}
+.lg code{font:10.5px ui-monospace,Menlo,monospace;color:var(--green);
+  background:rgba(53,224,161,.08);padding:1px 4px;border-radius:3px}
+.lg.g b{color:var(--green)}
+.lg.b b{color:#74B7FF}
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div>
+    <h1>石榴注入 · 画面取自王者KFD / 动效取自 HGhubX</h1>
+    <p>纯黑底 + 细线卡 + 荧光绿 + 白色药丸分页；动效全部是 HGhubX 的弹性曲线</p>
+  </div>
+  <div style="display:flex;gap:6px;align-items:center">
+    <span class="tag on">画面 · KFD P2</span>
+    <span class="tag on">动效 · HGhubX</span>
+  </div>
+  <button class="btn-replay" onclick="replay()">↻ 重播入场动画</button>
+</div>
+
+<div class="stage" id="stage">
+
+  <!-- ══════════ 应用页 ══════════ -->
+  <div class="phone">
+    <div class="glow"></div>
+    <div class="app">
+      <div class="sb">
+        <span>09:41</span>
+        <span class="ic">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect y="7" width="3" height="4" rx="1"/><rect x="4.6" y="5" width="3" height="6" rx="1"/><rect x="9.2" y="2.6" width="3" height="8.4" rx="1"/><rect x="13.8" width="3" height="11" rx="1"/></svg>
+          <svg width="15" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M1.2 4.4a9.6 9.6 0 0 1 13.6 0"/><path d="M3.9 7.3a5.8 5.8 0 0 1 8.2 0"/><path d="M6.6 10.1a2.3 2.3 0 0 1 2.8 0"/></svg>
+          <svg width="24" height="11" viewBox="0 0 25 12" fill="none"><rect x=".6" y=".6" width="20.8" height="10.8" rx="3.2" stroke="currentColor" opacity=".4"/><rect x="2.5" y="2.5" width="15" height="7" rx="1.8" fill="currentColor"/><path d="M23 4.2v3.6a2.1 2.1 0 0 0 0-3.6z" fill="currentColor" opacity=".45"/></svg>
+        </span>
+      </div>
+
+      <div class="hd titlein">
+        <div class="logo"><i></i></div>
+        <div class="tt"><b>石榴注入</b><span>TROLLFOOLS · INJECTOR</span></div>
+        <div class="rbtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+        </div>
+      </div>
+
+      <div class="seg" data-seg="0">
+        <div class="pill" style="left:3px"></div>
+        <button class="on">应用</button><button>注入</button><button>暂存箱</button>
+      </div>
+
+      <div class="body">
+        <div class="stack">
+          <div class="search rise" style="animation-delay:0ms">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="7"/><path d="m16 16 5 5"/></svg>
+            <input value="" placeholder="搜索 App 名称或 Bundle ID">
+          </div>
+
+          <div class="chips rise" style="animation-delay:35ms">
+            <div class="chip">☆ 收藏</div>
+            <div class="chip on">全部</div>
+            <div class="chip">用户</div>
+            <div class="chip">系统</div>
+          </div>
+
+          <div class="card rise" style="animation-delay:70ms">
+            <div class="row sel">
+              <div class="icon" style="background:linear-gradient(145deg,#5B8CFF,#1B3FA8)">王</div>
+              <div class="nm"><b>王者荣耀</b><span>com.tencent.smoba</span></div>
+              <div class="tick on"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0A0C10" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12 6 6L20 6"/></svg></div>
+              <div class="star on">★</div>
+            </div>
+            <div class="sep"></div>
+            <div class="row">
+              <div class="icon" style="background:linear-gradient(145deg,#4ADE80,#128A45)">微</div>
+              <div class="nm"><b>微信</b><span>com.tencent.xin</span></div>
+              <div class="tick"></div>
+              <div class="star">☆</div>
+            </div>
+            <div class="sep"></div>
+            <div class="row">
+              <div class="icon" style="background:linear-gradient(145deg,#FBBF24,#B45309)">和</div>
+              <div class="nm"><b>和平精英</b><span>com.tencent.tmgp.pubgmhd</span></div>
+              <div class="tick"></div>
+              <div class="star">☆</div>
+            </div>
+            <div class="sep"></div>
+            <div class="row">
+              <div class="icon" style="background:linear-gradient(145deg,#F472B6,#9D174D)">抖</div>
+              <div class="nm"><b>抖音</b><span>com.ss.iphone.ugc.Aweme</span></div>
+              <div class="tick"></div>
+              <div class="star">☆</div>
+            </div>
+            <div class="sep"></div>
+            <div class="row">
+              <div class="icon" style="background:linear-gradient(145deg,#F87171,#991B1B)">小</div>
+              <div class="nm"><b>小红书</b><span>com.xingin.discover</span></div>
+              <div class="tick"></div>
+              <div class="star">☆</div>
+            </div>
+            <div class="sep"></div>
+            <div class="row">
+              <div class="icon" style="background:linear-gradient(145deg,#38BDF8,#075985)">支</div>
+              <div class="nm"><b>支付宝</b><span>com.alipay.iphoneclient</span></div>
+              <div class="tick"></div>
+              <div class="star">☆</div>
+            </div>
+          </div>
+
+          <div class="muted">另有 12 个不支持注入的用户应用未显示</div>
+          <div class="version">石榴动态注入 v1.0 · 基于 TrollFools</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 注入页 ══════════ -->
+  <div class="phone">
+    <div class="glow"></div>
+    <div class="app">
+      <div class="sb">
+        <span>09:41</span>
+        <span class="ic">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect y="7" width="3" height="4" rx="1"/><rect x="4.6" y="5" width="3" height="6" rx="1"/><rect x="9.2" y="2.6" width="3" height="8.4" rx="1"/><rect x="13.8" width="3" height="11" rx="1"/></svg>
+          <svg width="15" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M1.2 4.4a9.6 9.6 0 0 1 13.6 0"/><path d="M3.9 7.3a5.8 5.8 0 0 1 8.2 0"/><path d="M6.6 10.1a2.3 2.3 0 0 1 2.8 0"/></svg>
+          <svg width="24" height="11" viewBox="0 0 25 12" fill="none"><rect x=".6" y=".6" width="20.8" height="10.8" rx="3.2" stroke="currentColor" opacity=".4"/><rect x="2.5" y="2.5" width="15" height="7" rx="1.8" fill="currentColor"/><path d="M23 4.2v3.6a2.1 2.1 0 0 0 0-3.6z" fill="currentColor" opacity=".45"/></svg>
+        </span>
+      </div>
+
+      <div class="hd titlein">
+        <div class="logo"><i></i></div>
+        <div class="tt"><b>石榴注入</b><span>TROLLFOOLS · INJECTOR</span></div>
+        <div class="rbtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+        </div>
+      </div>
+
+      <div class="seg" data-seg="1">
+        <div class="pill" style="left:3px"></div>
+        <button>应用</button><button class="on">注入</button><button>暂存箱</button>
+      </div>
+
+      <div class="body">
+        <div class="stack">
+
+          <div class="status on rise" style="animation-delay:0ms">
+            <div class="top">
+              <div class="cap">目标应用</div>
+              <div class="ico" style="background:linear-gradient(145deg,#5B8CFF,#1B3FA8);color:#fff;font-size:13px;font-weight:700">王</div>
+            </div>
+            <div class="big">王者荣耀</div>
+            <div class="hr"></div>
+            <div class="ft">
+              <span class="dot"></span>
+              <span class="st">已锁定</span>
+              <span class="sp2">·</span>
+              <span class="dt">com.tencent.smoba</span>
+            </div>
+          </div>
+
+          <div class="sh rise" style="animation-delay:35ms">
+            <b>选择插件</b><span class="sp"></span>
+            <div class="mini">全选</div>
+          </div>
+
+          <div class="card rise" style="animation-delay:70ms">
+            <div class="gh">
+              <span class="cv">⌄</span><span class="t">王者荣耀</span><span class="n">2</span>
+            </div>
+            <div class="prow sel">
+              <div class="tick on"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0A0C10" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12 6 6L20 6"/></svg></div>
+              <div class="nm"><b>smoba_menu.dylib</b><div class="psub">DYLIB</div></div>
+            </div>
+            <div class="sep" style="margin-left:44px"></div>
+            <div class="prow">
+              <div class="tick"></div>
+              <div class="nm"><b>libhook_helper.dylib</b><div class="psub">DYLIB</div></div>
+            </div>
+          </div>
+
+          <div class="sh rise" style="animation-delay:105ms">
+            <b>System Output</b><span class="sp"></span>
+            <div class="mini">清空</div><div class="mini">复制</div>
+          </div>
+
+          <div class="term rise" style="animation-delay:140ms">
+            <div><span class="ts">[09:41:02]</span> <span class="hi">⚡️ 临时注入：王者荣耀 ← 2 个插件</span></div>
+            <div><span class="ts">[09:41:02]</span> <span class="df">   - smoba_menu.dylib</span></div>
+            <div><span class="ts">[09:41:03]</span> <span class="df">🧩 正在打包可执行文件…</span></div>
+            <div><span class="ts">[09:41:04]</span> <span class="ok">✅ 已写入 2 个插件，签名校验通过</span></div>
+            <div><span class="ts">[09:41:04]</span> <span class="ok">✅ 注入完成，正在启动…</span></div>
+            <div><span class="ts">[09:41:05]</span> <span class="ok">✅ 王者荣耀 已启动</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dockbar">
+        <button class="cta">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13.4 2.2 4.6 13.4c-.4.6 0 1.4.7 1.4h5.5l-1.3 7c-.1.7.8 1 1.2.4l8.8-11.2c.4-.6 0-1.4-.7-1.4h-5.5l1.3-7c.1-.7-.8-1-1.2-.4z"/></svg>
+          注入并启动（2 个插件）
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 暂存箱 ══════════ -->
+  <div class="phone">
+    <div class="glow"></div>
+    <div class="app">
+      <div class="sb">
+        <span>09:41</span>
+        <span class="ic">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect y="7" width="3" height="4" rx="1"/><rect x="4.6" y="5" width="3" height="6" rx="1"/><rect x="9.2" y="2.6" width="3" height="8.4" rx="1"/><rect x="13.8" width="3" height="11" rx="1"/></svg>
+          <svg width="15" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M1.2 4.4a9.6 9.6 0 0 1 13.6 0"/><path d="M3.9 7.3a5.8 5.8 0 0 1 8.2 0"/><path d="M6.6 10.1a2.3 2.3 0 0 1 2.8 0"/></svg>
+          <svg width="24" height="11" viewBox="0 0 25 12" fill="none"><rect x=".6" y=".6" width="20.8" height="10.8" rx="3.2" stroke="currentColor" opacity=".4"/><rect x="2.5" y="2.5" width="15" height="7" rx="1.8" fill="currentColor"/><path d="M23 4.2v3.6a2.1 2.1 0 0 0 0-3.6z" fill="currentColor" opacity=".45"/></svg>
+        </span>
+      </div>
+
+      <div class="hd titlein">
+        <div class="logo"><i></i></div>
+        <div class="tt"><b>石榴注入</b><span>TROLLFOOLS · INJECTOR</span></div>
+        <div class="rbtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+        </div>
+      </div>
+
+      <div class="seg" data-seg="2">
+        <div class="pill" style="left:3px"></div>
+        <button>应用</button><button>注入</button><button class="on">暂存箱</button>
+      </div>
+
+      <div class="body">
+        <div class="stack">
+
+          <div class="rcard rise" style="animation-delay:0ms;align-items:flex-start;padding:13px">
+            <div class="ico" style="border-radius:9px;width:30px;height:30px">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6a2 2 0 0 1 2-2h4.2a2 2 0 0 1 1.4.6L12 6h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+            </div>
+            <div class="nm" style="white-space:normal">
+              <b style="font-size:13px">「插件导入」文件夹的实时镜像</b>
+              <span style="font-size:11px;line-height:1.65;white-space:normal;color:var(--weak);margin-top:4px">同步目录：/var/mobile/Documents/插件导入。文件夹里有什么这里就显示什么，删除也会同步；只有 dylib / framework / bundle / zip / deb 会被当作插件，重复副本自动合并。</span>
+            </div>
+          </div>
+
+          <div class="duo rise" style="animation-delay:35ms">
+            <button class="cta2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+              立即同步
+            </button>
+            <button class="cta2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 7a2 2 0 0 1 2-2h3.5l1.5 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v6M9 14h6"/></svg>
+              新建分类
+            </button>
+          </div>
+
+          <div class="rise" style="animation-delay:70ms;display:flex;align-items:center;gap:6px;padding:2px 3px 0;font-size:11px">
+            <span style="width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 6px rgba(53,224,161,.9)"></span>
+            <span style="color:var(--sub);font-weight:500">3 个插件</span>
+            <span style="color:var(--faint)">·</span>
+            <span style="color:var(--weak)">2 个分类</span>
+          </div>
+
+          <div class="card rise" style="animation-delay:105ms">
+            <div class="gh"><span class="cv">⌄</span><span class="t">王者荣耀</span><span class="n">2</span></div>
+            <div class="prow">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="color:var(--green);flex:none"><path d="M5 3h9l5 5v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg>
+              <div class="nm"><b style="font-size:13px">smoba_menu.dylib</b><span style="font-size:10px">王者荣耀/smoba_menu.dylib</span></div>
+              <div style="color:rgba(255,110,120,.85);font-size:11.5px;flex:none">🗑</div>
+            </div>
+            <div class="sep" style="margin-left:44px"></div>
+            <div class="prow">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="color:var(--green);flex:none"><path d="M5 3h9l5 5v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg>
+              <div class="nm"><b style="font-size:13px">libhook_helper.dylib</b><span style="font-size:10px">王者荣耀/libhook_helper.dylib</span></div>
+              <div style="color:rgba(255,110,120,.85);font-size:11.5px;flex:none">🗑</div>
+            </div>
+            <div class="sep" style="margin-left:0"></div>
+            <div class="gh"><span class="cv">⌄</span><span class="t">未分类</span><span class="n">1</span></div>
+            <div class="prow">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="color:var(--green);flex:none"><path d="M5 3h9l5 5v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg>
+              <div class="nm"><b style="font-size:13px">DemoTweak.dylib</b><span style="font-size:10px">DemoTweak.dylib</span></div>
+              <div style="color:rgba(255,110,120,.85);font-size:11.5px;flex:none">🗑</div>
+            </div>
+          </div>
+
+          <div class="sh rise" style="animation-delay:140ms"><b>导入日志</b></div>
+
+          <div class="term rise" style="animation-delay:175ms;max-height:104px">
+            <div><span class="ts">[09:40:12]</span> <span class="hi">📁 已创建分类：王者荣耀</span></div>
+            <div><span class="ts">[09:40:26]</span> <span class="ok">✅ 导入 smoba_menu.dylib</span></div>
+            <div><span class="ts">[09:40:31]</span> <span class="ok">✅ 导入 libhook_helper.dylib</span></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="lg g">
+    <b>画面 · 来自王者KFD</b>
+    <p>色值一比一取自 <code>BBZView.mm</code> 的 SLK_ 宏：底色 <code>#07080B</code>、卡面 <code>#0E1014</code>、绿 <code>#35E0A1</code>。白色药丸分页、33pt 细体大字、细线卡、彩色终端，全部照搬。</p>
+  </div>
+  <div class="lg b">
+    <b>动效 · 来自 HGhubX</b>
+    <p>按下缩到 <code>0.965</code>（55ms 压下 / 弹簧回升）、逐条入场 <code>translateY(14px)</code> 带过冲、药丸滑移 <code>.34s cubic-bezier(.34,1.56,.64,1)</code>、切页横向 18px 交叉淡入、弹窗 0.97→1.005→1。</p>
+  </div>
+  <div class="lg">
+    <b>直接试一下</b>
+    <p>点上面的分页药丸看滑移，点任意卡片看按下回弹，点「重播入场动画」重看逐条上浮。真机上是同一套曲线，spring 参数：<code>response .42 / damping .62</code>。</p>
+  </div>
+</div>
+
+<script>
+const stage = document.getElementById('stage');
+
+function layout(seg){
+  const btns = [...seg.querySelectorAll('button')];
+  const idx = btns.findIndex(b => b.classList.contains('on'));
+  const pill = seg.querySelector('.pill');
+  const w = (seg.clientWidth - 6 - (btns.length-1)*3) / btns.length;
+  pill.style.width = w + 'px';
+  pill.style.transform = 'translateX(' + (idx * (w + 3)) + 'px)';
+}
+function layoutAll(){ document.querySelectorAll('.seg').forEach(layout); }
+window.addEventListener('resize', layoutAll);
+layoutAll();
+
+// 分页点击：药丸滑移 + 按钮字色切换
+document.querySelectorAll('.seg').forEach(seg => {
+  seg.querySelectorAll('button').forEach((b, i) => {
+    b.addEventListener('click', () => {
+      seg.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      layout(seg);
+    });
+  });
+});
+
+// 重播入场
+function replay(){
+  document.querySelectorAll('.rise,.titlein').forEach(el => {
+    el.style.animation = 'none';
+    void el.offsetWidth;
+    el.style.animation = '';
+  });
+}
+
+// 卡片按下反馈（按钮之外的元素也给一点回弹）
+document.querySelectorAll('.card,.rcard,.status,.term').forEach(el => {
+  el.style.transition = 'scale .24s cubic-bezier(.34,1.56,.64,1)';
+  el.addEventListener('pointerdown', () => { el.style.scale = '.985'; el.style.transitionDuration = '55ms'; });
+  el.addEventListener('pointerup', () => { el.style.scale = '1'; el.style.transitionDuration = '.24s'; });
+  el.addEventListener('pointerleave', () => { el.style.scale = '1'; });
+});
+</script>
+</body>
+</html>
