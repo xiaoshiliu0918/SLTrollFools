@@ -32,9 +32,10 @@ jobs:
       - name: Collect tipa
         if: success()
         run: |
-          VERSION=$(awk -F "=" '/^VERSION/ {print $2}' TrollFools/Version.xcconfig | tr -d ' ')
-          BUILD=$(awk -F "=" '/^BUILD_NUMBER/ {print $2}' TrollFools/Version.xcconfig | tr -d ' ')
+          VERSION=$(awk -F "=" '/^VERSION/ {print $2}' TrollFools/Version.xcconfig | tr -d '[:space:]')
+          BUILD=$(awk -F "=" '/^BUILD_NUMBER/ {print $2}' TrollFools/Version.xcconfig | tr -d '[:space:]')
           echo "NAME=SLTrollFools-${VERSION}-${BUILD}" >> $GITHUB_ENV
+          echo "TAG=v${VERSION}-b${BUILD}" >> $GITHUB_ENV
           mkdir -p out
           ls -la packages
           TIPA=$(find packages -maxdepth 1 -name '*.tipa' | head -1)
@@ -49,6 +50,21 @@ jobs:
           name: ${{ env.NAME }}
           path: out/*.tipa
           if-no-files-found: error
+
+      - name: Publish release
+        if: success() && github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.NAME }}
+          body: |
+            SLTrollFools 自动构建产物。
+
+            - 画面：KFD / SLK 深色终端风
+            - 动效：HGhubX 弹性曲线
+            - 支持 iOS 14.0+
+          files: out/*.tipa
+          fail_on_unmatched_files: true
 
       - name: Upload build log
         if: always()
