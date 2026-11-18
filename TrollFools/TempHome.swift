@@ -1438,6 +1438,27 @@ private struct LiquidTabBar: View {
                 visual = newValue
             }
         }
+        .contentShape(Rectangle())
+        .highPriorityGesture(swipeGesture)
+    }
+
+    /// 在底栏上左右拖也能换栏。
+    ///
+    /// `minimumDistance` 给 12pt：轻点不会误判成拖动，按钮的点击照常触发；
+    /// 甩动超过 24pt 才算一次换栏，避免手指落点抖动就跳页。
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onEnded { value in
+                let dx = value.translation.width
+                guard abs(dx) > 24 else { return }
+                let target = dx < 0
+                    ? min(selection + 1, items.count - 1)
+                    : max(selection - 1, 0)
+                guard target != selection else { return }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    selection = target
+                }
+            }
     }
 
     private func tabButton(index: Int) -> some View {
@@ -1623,8 +1644,6 @@ struct TempHomeView: View {
         var body: some View {
             NavigationView {
                 ZStack {
-                    LiquidGlassBackground()
-
                     VStack(spacing: 0) {
                         // 搜索栏（始终显示，不受列表状态影响）
                         HStack(spacing: 8) {
@@ -1743,6 +1762,10 @@ struct TempHomeView: View {
                         }
                     }
                 }
+                // 壁纸走 background 而不是放进 ZStack：
+                // 它内部带 ignoresSafeArea，作为子视图会把整个 ZStack 撑到全屏，
+                // 页面内容于是从状态栏底下起排，被大标题压住。
+                .background(LiquidGlassBackground())
                 .navigationBarTitleDisplayMode(.large)
                 .navigationTitle("应用")
                 .toolbar {
@@ -1775,8 +1798,6 @@ struct TempHomeView: View {
         var body: some View {
             NavigationView {
                 ZStack {
-                    LiquidGlassBackground()
-
                     ScrollView {
                         VStack(spacing: 0) {
                             // 已选目标应用
@@ -2041,6 +2062,7 @@ struct TempHomeView: View {
                         .padding(.horizontal, 16)
                     }
                 }
+                .background(LiquidGlassBackground())
                 .navigationBarTitleDisplayMode(.large)
                 .navigationTitle("注入")
                 .onAppear {
@@ -2172,8 +2194,6 @@ struct StashView: View {
 
     var body: some View {
         ZStack {
-            LiquidGlassBackground()
-
             ScrollView {
                 VStack(spacing: 0) {
                     Text("暂存箱是「插件导入」文件夹的实时镜像：文件夹里有什么，这里就显示什么；在这里删除，文件夹里的对应文件会一并删除。点分组标题可展开／收起。")
@@ -2208,6 +2228,7 @@ struct StashView: View {
                 .padding(.bottom, 130)
             }
         }
+        .background(LiquidGlassBackground())
         .navigationTitle("暂存箱")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -2235,8 +2256,6 @@ struct StashView: View {
         .sheet(isPresented: $isCreateCategoryPresented) {
             NavigationView {
                 ZStack {
-                    LiquidGlassBackground()
-
                     VStack(spacing: 14) {
                         Text("分类文件夹会创建在「插件导入」目录下，暂存箱同步出现。之后把对应 dylib 拖进该文件夹即可自动归类。")
                             .font(.caption)
@@ -2285,6 +2304,7 @@ struct StashView: View {
                     }
                     .padding(.top, 14)
                 }
+                .background(LiquidGlassBackground())
                 .navigationTitle("新建分类")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
