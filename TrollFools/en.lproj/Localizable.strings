@@ -315,3 +315,6 @@
 "ChoosePlugInsAndTempInject" = "Choose Plug-Ins · Temp Inject & Launch";
 "TempInjectSuccessHint" = "Temporarily injected and launched. The plug-in will be ejected automatically once the target app exits.\nRe-open the target app directly and it runs clean.\nUse this tool to inject again.";
 "TempInjectCLIMissing" = "trollfoolscli component not found, unable to start the auto-restore watchdog.";
+"TempInjectCLIStartFailed" = "Failed to start the watchdog. Injected plug-ins will be restored the next time this tool is opened.";
+"Missing bundled component: %@" = "Missing component: %@. Please reinstall the complete tipa.";
+"Missing bundled resource: %@" = "Missing resource: %@. Please reinstall the complete tipa.";

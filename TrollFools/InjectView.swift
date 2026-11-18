@@ -145,8 +145,17 @@ struct InjectView: View {
 
             if tempMode {
                 let manager = TempInjectManager.shared
+                // 状态先落盘：它决定下次启动能不能自愈，写失败必须整体失败。
                 try manager.writeState(bid: app.bid, assetURLs: urlList)
-                try manager.spawnWatchdog(bid: app.bid)
+                // 看门狗起不来 ≠ 注入失败：插件已生效，退化为“下次打开本 App 时
+                // 由 cleanupOrphans 还原”。旧实现把它当致命错误，用户会看到
+                // “注入失败”但其实注入已经成功，反而更迷惑。
+                do {
+                    try manager.spawnWatchdog(bid: app.bid)
+                } catch {
+                    DDLogError("watchdog spawn failed: \(error)", ddlog: InjectorV3.main.logger)
+                    ImportEngine.shared.log("⚠️ 自动还原看门狗启动失败：\(error.localizedDescription)")
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [bid = app.bid] in
                     TempInjectManager.shared.launchApp(bid: bid)
                 }
@@ -221,11 +230,47 @@ final class TempInjectManager {
             }
             return TempEntry(name: url.lastPathComponent, kind: kind)
         }
-        let data = try JSONEncoder().encode(entries)
+        // 合并上一次会话的条目，而不是整份覆盖。
+        // 场景：同一个 App 先临时注入 A、退出后再注入 B。若 state.json 被 B 覆盖，
+        // 看门狗只会摘掉 B —— A 的 dylib 就永久留在 App 里（既不属于任何会话状态，
+        // 也不会被下一次还原带走），只能重装 App 才能清掉。
+        var merged = Self.readEntries(bid: bid)
+        for entry in entries where !merged.contains(where: { $0.name == entry.name && $0.kind == entry.kind }) {
+            merged.append(entry)
+        }
+        let data = try JSONEncoder().encode(merged)
         try data.write(to: stateFileURL(for: bid), options: .atomic)
 
-        let listContent = assetURLs.map { $0.path }.joined(separator: "\n")
-        try listContent.write(to: plugInListURL(for: bid), atomically: true, encoding: .utf8)
+        // plugins.list 同样合并去重，保留“上次选择”的完整性
+        var paths = Self.readPluginList(bid: bid)
+        for url in assetURLs.map(\.path) where !paths.contains(url) {
+            paths.append(url)
+        }
+        try paths.joined(separator: "\n")
+            .write(to: plugInListURL(for: bid), atomically: true, encoding: .utf8)
+    }
+
+    /// 读取已有会话条目（不做存在性过滤：还原时必须按记录去摘 LC）。
+    private static func readEntries(bid: String) -> [TempEntry] {
+        let url = Constants.tempInjectRootURL
+            .appendingPathComponent(bid, isDirectory: true)
+            .appendingPathComponent("state.json")
+        guard let data = try? Data(contentsOf: url),
+              let entries = try? JSONDecoder().decode([TempEntry].self, from: data)
+        else { return [] }
+        return entries
+    }
+
+    /// 读取上次记录的插件路径（原样返回，含已失效路径）。
+    private static func readPluginList(bid: String) -> [String] {
+        let url = Constants.tempInjectRootURL
+            .appendingPathComponent(bid, isDirectory: true)
+            .appendingPathComponent("plugins.list")
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return content
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     /// Plugins remembered from the last temporary injection, for one-tap reuse.
@@ -269,11 +314,22 @@ final class TempInjectManager {
             )
         }
         killWatchdog(bid: bid)
+
+        // 用 setPid 确认 posix_spawn 真的成功：旧实现是 fire-and-forget，
+        // 失败时照样写 state.json，留下“注入了但没人还原”的会话。
+        var spawnedPid: pid_t = 0
         AuxiliaryExecute.spawn(
             command: cliURL.path,
             args: ["watch", bid],
+            setPid: { spawnedPid = $0 },
             completionBlock: nil
         )
+        guard spawnedPid > 1 else {
+            throw NSError(
+                domain: Constants.gErrorDomain, code: -2,
+                userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("TempInjectCLIStartFailed", comment: "")]
+            )
+        }
     }
 
     func killWatchdog(bid: String) {
@@ -285,7 +341,11 @@ final class TempInjectManager {
         guard let pid = pid_t(trimmed), pid > 1 else {
             return
         }
-        kill(pid, SIGKILL)
+        // pid 文件可能是上一次会话的残留，pid 被系统复用后会误杀无关进程。
+        // 只有确认该 pid 仍是 trollfoolscli 才动手。
+        if let path = ProcessUtil.executablePath(of: pid), path.hasSuffix("/trollfoolscli") {
+            kill(pid, SIGKILL)
+        }
         try? FileManager.default.removeItem(at: pidFileURL)
     }
 
@@ -297,7 +357,16 @@ final class TempInjectManager {
 
     /// On app start: restore orphan sessions whose watchdog has died,
     /// so temporary injections never outlive their session.
+    private static let restoreQueue = DispatchQueue(label: "wiki.qaq.TrollFools.tempinject.restore")
+
     func cleanupOrphans() {
+        // 两个入口（App.init 与首页 onAppear）都会调。旧实现两边各自起一个
+        // global 队列，同一个会话可能被并发还原两次；后一次在 state.json 被删后
+        // 走“无状态”分支，先把目录删了再和真正在跑的还原抢文件。这里串行化。
+        Self.restoreQueue.sync { restoreOrphansLocked() }
+    }
+
+    private func restoreOrphansLocked() {
         let fileManager = FileManager.default
         guard let dirURLs = try? fileManager.contentsOfDirectory(
             at: stateRootURL,
@@ -315,7 +384,9 @@ final class TempInjectManager {
             let pidFileURL = dirURL.appendingPathComponent("watchdog.pid")
             if let content = try? String(contentsOf: pidFileURL, encoding: .utf8) {
                 let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let pid = pid_t(trimmed), pid > 1, kill(pid, 0) == 0 {
+                if let pid = pid_t(trimmed), pid > 1, kill(pid, 0) == 0,
+                   let path = ProcessUtil.executablePath(of: pid), path.hasSuffix("/trollfoolscli")
+                {
                     continue
                 }
             }
@@ -326,18 +397,129 @@ final class TempInjectManager {
                 continue
             }
 
+            // 连续失败上限：每次重试都要阻塞最多 300 秒，而这类失败通常是永久性的
+            // （二进制被别的工具改过、.bak 已丢失）。重试 3 次仍不行就停下，
+            // 保留 state.json 与 .bak 供人工处理，不再拖慢每一次启动。
+            let attemptURL = dirURL.appendingPathComponent("restore-attempts")
+            let attemptText = ((try? String(contentsOf: attemptURL, encoding: .utf8)) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let attempts = Int(attemptText) ?? 0
+            if attempts >= 3 {
+                continue
+            }
+
             // watchdog died without restoring: restore synchronously via CLI.
             // IMPORTANT: use the *blocking* spawn variant (waits via semaphore),
             // otherwise removing state.json below races the CLI startup and the
             // targeted restore degrades into a destructive ejectAll.
-            if let cliURL = Self.cliBinaryURL {
-                _ = AuxiliaryExecute.spawn(
-                    command: cliURL.path,
-                    args: ["watch", bid, "--timeout", "0"],
-                    timeout: 300
-                )
+            guard let cliURL = Self.cliBinaryURL else {
+                ImportEngine.shared.log("⚠️ 缺少 trollfoolscli，\(bid) 的残留注入无法自动还原（状态已保留）")
+                continue
             }
-            try? fileManager.removeItem(at: dirURL)
+
+            let receipt = AuxiliaryExecute.spawn(
+                command: cliURL.path,
+                args: ["watch", bid, "--timeout", "0"],
+                timeout: 300
+            )
+
+            // 只有确认还原成功才删状态。旧实现无论成败都删，
+            // 一旦这次 eject 失败（插件已被系统清掉、Mach-O 被别的工具改过），
+            // .bak 与 state.json 一起丢失 → 目标 App 留着指向已删 dylib 的
+            // LC，启动即 dyld 崩溃，且再无自愈路径。
+            var restored = false
+            if case let .exit(code) = receipt.terminationReason, code == EXIT_SUCCESS {
+                restored = true
+            }
+            if restored {
+                try? fileManager.removeItem(at: dirURL)
+            } else {
+                let next = attempts + 1
+                try? String(next).write(to: attemptURL, atomically: true, encoding: .utf8)
+                let marker = dirURL.appendingPathComponent("restore-pending")
+                let stamp = ISO8601DateFormatter().string(from: Date())
+                try? stamp.write(to: marker, atomically: true, encoding: .utf8)
+                if next >= 3 {
+                    ImportEngine.shared.log("❌ \(bid) 自动还原连续失败 \(next) 次，已暂停重试；状态与 .bak 保留")
+                } else {
+                    ImportEngine.shared.log("⚠️ \(bid) 还原失败（第 \(next) 次），下次启动继续重试")
+                }
+            }
         }
+    }
+
+    // MARK: - 待处理会话（供 UI 展示/手动还原）
+
+    struct PendingSession {
+        let bid: String
+        let appName: String
+        let attempts: Int
+    }
+
+    /// 列出“有会话状态、但看门狗已不在跑”的 App。
+    /// 自动重试有上限，超过上限后必须留一个手动入口，否则用户只能重装 App。
+    func pendingSessions() -> [PendingSession] {
+        let fm = FileManager.default
+        guard let dirs = try? fm.contentsOfDirectory(
+            at: stateRootURL,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return [] }
+
+        var result: [PendingSession] = []
+        for dirURL in dirs {
+            guard (try? dirURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else {
+                continue
+            }
+            guard fm.fileExists(atPath: dirURL.appendingPathComponent("state.json").path) else {
+                continue
+            }
+            // 看门狗还活着 = 正在进行的会话，不列入待处理
+            let pidFileURL = dirURL.appendingPathComponent("watchdog.pid")
+            if let content = try? String(contentsOf: pidFileURL, encoding: .utf8),
+               let pid = pid_t(content.trimmingCharacters(in: .whitespacesAndNewlines)),
+               pid > 1, kill(pid, 0) == 0,
+               let path = ProcessUtil.executablePath(of: pid), path.hasSuffix("/trollfoolscli")
+            {
+                continue
+            }
+
+            let bid = dirURL.lastPathComponent
+            let attemptText = ((try? String(contentsOf: dirURL.appendingPathComponent("restore-attempts"), encoding: .utf8)) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = LSApplicationProxy(forIdentifier: bid)?.localizedName() ?? bid
+            result.append(PendingSession(
+                bid: bid,
+                appName: name,
+                attempts: Int(attemptText) ?? 0
+            ))
+        }
+        return result.sorted { $0.bid < $1.bid }
+    }
+
+    /// 手动还原一个会话：忽略自动重试上限，成功才删状态目录。
+    @discardableResult
+    func restoreNow(bid: String) -> Bool {
+        guard let cliURL = Self.cliBinaryURL else {
+            ImportEngine.shared.log("⚠️ 缺少 trollfoolscli，无法手动还原 \(bid)")
+            return false
+        }
+        killWatchdog(bid: bid)
+        let receipt = AuxiliaryExecute.spawn(
+            command: cliURL.path,
+            args: ["watch", bid, "--timeout", "0"],
+            timeout: 300
+        )
+        var restored = false
+        if case let .exit(code) = receipt.terminationReason, code == EXIT_SUCCESS {
+            restored = true
+        }
+        if restored {
+            try? FileManager.default.removeItem(at: stateDirURL(for: bid))
+            ImportEngine.shared.log("✅ \(bid) 已还原")
+        } else {
+            // 不重置失败计数：手动重试只给一次机会，避免又回到“每次启动都阻塞”的循环。
+            ImportEngine.shared.log("❌ \(bid) 手动还原失败，状态与备份已保留")
+        }
+        return restored
     }
 }

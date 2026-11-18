@@ -63,9 +63,9 @@ jobs:
           body: |
             SLTrollFools 自动构建产物。
 
-            - 画面：KFD / SLK 深色终端风
+            - 画面：液态磨砂玻璃（柔光壁纸底 + 独立磨砂卡），深色 / 浅色双主题
             - 动效：HGhubX 弹性曲线
-            - 支持 iOS 14.0+
+            - 支持 iOS 14.0+（iOS 15+ 叠加真模糊 Material）
           files: out/*.tipa
           fail_on_unmatched_files: true
 

@@ -5,6 +5,7 @@
 //  Created by 82Flex on 2025/1/10.
 //
 
+import CocoaLumberjackSwift
 import Foundation
 
 extension InjectorV3 {
@@ -45,5 +46,22 @@ extension InjectorV3 {
         }
         let alternateURL = Self.alternateURL(for: target)
         try cmdMove(from: alternateURL, to: target, overwrite: true)
+    }
+
+    /// 把所有带备份的 Mach-O 直接回滚到注入前状态，返回回滚数量。
+    ///
+    /// 用于降级路径：插件文件已经不在磁盘上（系统清理/用户手删），
+    /// 没有 load command 可摘，只能靠 `.bak` 整体还原，
+    /// 否则目标 App 会带着指向不存在 dylib 的 LC 一直崩。
+    @discardableResult
+    func restoreAllAlternates() throws -> Int {
+        var restored = 0
+        let targets = try frameworkMachOsInBundle(bundleURL)
+        for target in targets where hasAlternate(target) {
+            try restoreAlternate(target)
+            restored += 1
+        }
+        DDLogInfo("Restored \(restored) alternate(s) for \(bundleURL.lastPathComponent)", ddlog: logger)
+        return restored
     }
 }

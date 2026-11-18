@@ -11,7 +11,7 @@ import MachOKit
 extension InjectorV3 {
     // MARK: - chown
 
-    fileprivate static let chownBinaryURL = findExecutable("chown")
+    fileprivate static func chownBinaryURL() throws -> URL { try findExecutable("chown") }
 
     func cmdChangeOwner(_ target: URL, owner: uid_t, groupOwner: uid_t? = nil, recursively: Bool = false) throws {
         if isPrivileged {
@@ -28,7 +28,7 @@ extension InjectorV3 {
             args.append(String(format: "%d", owner))
         }
         args.append(target.path)
-        let retCode = try Execute.rootSpawn(binary: Self.chownBinaryURL.path, arguments: args, ddlog: logger)
+        let retCode = try Execute.rootSpawn(binary: try Self.chownBinaryURL().path, arguments: args, ddlog: logger)
         guard case let .exit(code) = retCode, code == EXIT_SUCCESS else {
             try throwCommandFailure("chown", reason: retCode)
         }
@@ -56,13 +56,13 @@ extension InjectorV3 {
 
     // MARK: - cp
 
-    fileprivate static let cpBinaryURL: URL = {
+    fileprivate static func cpBinaryURL() throws -> URL {
         if #available(iOS 16, *) {
-            findExecutable("cp")
+            return try findExecutable("cp")
         } else {
-            findExecutable("cp-15")
+            return try findExecutable("cp-15")
         }
-    }()
+    }
 
     func cmdCopy(from srcURL: URL, to destURL: URL, clone: Bool = false, overwrite: Bool = false) throws {
         if isPrivileged {
@@ -77,7 +77,7 @@ extension InjectorV3 {
             args.append("--reflink=auto")
         }
         args += ["-rfp", srcURL.path, destURL.path]
-        let retCode = try Execute.rootSpawn(binary: Self.cpBinaryURL.path, arguments: args, ddlog: logger)
+        let retCode = try Execute.rootSpawn(binary: try Self.cpBinaryURL().path, arguments: args, ddlog: logger)
         guard case let .exit(code) = retCode, code == EXIT_SUCCESS else {
             try throwCommandFailure("cp", reason: retCode)
         }
@@ -92,7 +92,7 @@ extension InjectorV3 {
 
     // MARK: - ldid
 
-    fileprivate static let ldidBinaryURL: URL = findExecutable("ldid")
+    fileprivate static func ldidBinaryURL() throws -> URL { try findExecutable("ldid") }
 
     func cmdPseudoSign(_ target: URL, force: Bool = false) throws {
         var hasCodeSign = false
@@ -134,7 +134,7 @@ extension InjectorV3 {
         if preservesEntitlements {
             var receipt: AuxiliaryExecute.ExecuteReceipt
 
-            receipt = try Execute.rootSpawnWithOutputs(binary: Self.ldidBinaryURL.path, arguments: [
+            receipt = try Execute.rootSpawnWithOutputs(binary: try Self.ldidBinaryURL().path, arguments: [
                 "-e", target.path,
             ], ddlog: logger)
 
@@ -149,7 +149,7 @@ extension InjectorV3 {
 
             try xmlContent.write(to: xmlURL, atomically: true, encoding: .utf8)
 
-            receipt = try Execute.rootSpawnWithOutputs(binary: Self.ldidBinaryURL.path, arguments: [
+            receipt = try Execute.rootSpawnWithOutputs(binary: try Self.ldidBinaryURL().path, arguments: [
                 "-S\(xmlURL.path)", target.path,
             ], ddlog: logger)
 
@@ -157,7 +157,7 @@ extension InjectorV3 {
                 try throwCommandFailure("ldid", reason: receipt.terminationReason)
             }
         } else {
-            let retCode = try Execute.rootSpawn(binary: Self.ldidBinaryURL.path, arguments: [
+            let retCode = try Execute.rootSpawn(binary: try Self.ldidBinaryURL().path, arguments: [
                 "-S", target.path,
             ], ddlog: logger)
 
@@ -169,7 +169,7 @@ extension InjectorV3 {
 
     // MARK: - mkdir
 
-    fileprivate static let mkdirBinaryURL = findExecutable("mkdir")
+    fileprivate static func mkdirBinaryURL() throws -> URL { try findExecutable("mkdir") }
 
     func cmdMakeDirectory(at target: URL, withIntermediateDirectories: Bool = false) throws {
         if isPrivileged {
@@ -181,7 +181,7 @@ extension InjectorV3 {
             args.append("-p")
         }
         args.append(target.path)
-        let retCode = try Execute.rootSpawn(binary: Self.mkdirBinaryURL.path, arguments: args, ddlog: logger)
+        let retCode = try Execute.rootSpawn(binary: try Self.mkdirBinaryURL().path, arguments: args, ddlog: logger)
         guard case let .exit(code) = retCode, code == EXIT_SUCCESS else {
             try throwCommandFailure("mkdir", reason: retCode)
         }
@@ -193,13 +193,13 @@ extension InjectorV3 {
 
     // MARK: - mv
 
-    fileprivate static let mvBinaryURL: URL = {
+    fileprivate static func mvBinaryURL() throws -> URL {
         if #available(iOS 16, *) {
-            findExecutable("mv")
+            return try findExecutable("mv")
         } else {
-            findExecutable("mv-15")
+            return try findExecutable("mv-15")
         }
-    }()
+    }
 
     func cmdMove(from srcURL: URL, to destURL: URL, overwrite: Bool = false) throws {
         if isPrivileged {
@@ -214,7 +214,7 @@ extension InjectorV3 {
             args.append("-f")
         }
         args += [srcURL.path, destURL.path]
-        let retCode = try Execute.rootSpawn(binary: Self.mvBinaryURL.path, arguments: args, ddlog: logger)
+        let retCode = try Execute.rootSpawn(binary: try Self.mvBinaryURL().path, arguments: args, ddlog: logger)
         guard case let .exit(code) = retCode, code == EXIT_SUCCESS else {
             try throwCommandFailure("mv", reason: retCode)
         }
@@ -229,14 +229,14 @@ extension InjectorV3 {
 
     // MARK: - rm
 
-    fileprivate static let rmBinaryURL = findExecutable("rm")
+    fileprivate static func rmBinaryURL() throws -> URL { try findExecutable("rm") }
 
     func cmdRemove(_ target: URL, recursively: Bool = false) throws {
         if isPrivileged {
             try rootRemove(target, recursively: recursively)
             return
         }
-        let retCode = try Execute.rootSpawn(binary: Self.rmBinaryURL.path, arguments: [
+        let retCode = try Execute.rootSpawn(binary: try Self.rmBinaryURL().path, arguments: [
             recursively ? "-rf" : "-f", target.path,
         ], ddlog: logger)
         guard case let .exit(code) = retCode, code == EXIT_SUCCESS else {
@@ -257,11 +257,11 @@ extension InjectorV3 {
 
     // MARK: - ct_bypass
 
-    fileprivate static let ctBypassBinaryURL = findExecutable("ct_bypass")
+    fileprivate static func ctBypassBinaryURL() throws -> URL { try findExecutable("ct_bypass") }
 
     func cmdCoreTrustBypass(_ target: URL, teamID: String) throws {
         try cmdPseudoSign(target)
-        let retCode = try Execute.rootSpawn(binary: Self.ctBypassBinaryURL.path, arguments: [
+        let retCode = try Execute.rootSpawn(binary: try Self.ctBypassBinaryURL().path, arguments: [
             "-r", "-i", target.path, "-t", teamID,
         ], ddlog: logger)
         guard case let .exit(code) = retCode, code == EXIT_SUCCESS else {
@@ -271,7 +271,7 @@ extension InjectorV3 {
 
     // MARK: - insert_dylib
 
-    fileprivate static let insertDylibBinaryURL = findExecutable("insert_dylib")
+    fileprivate static func insertDylibBinaryURL() throws -> URL { try findExecutable("insert_dylib") }
 
     func cmdInsertLoadCommandDylib(_ target: URL, name: String, weak: Bool = false) throws {
         let dylibs = try loadedDylibsOfMachO(target)
@@ -285,7 +285,7 @@ extension InjectorV3 {
         if weak {
             args.append("--weak")
         }
-        let retCode = try Execute.rootSpawn(binary: Self.insertDylibBinaryURL.path, arguments: args, ddlog: logger)
+        let retCode = try Execute.rootSpawn(binary: try Self.insertDylibBinaryURL().path, arguments: args, ddlog: logger)
         guard case let .exit(code) = retCode, code == EXIT_SUCCESS else {
             try throwCommandFailure("insert_dylib", reason: retCode)
         }
@@ -293,7 +293,7 @@ extension InjectorV3 {
 
     // MARK: - install_name_tool
 
-    fileprivate static let installNameToolBinaryURL = findExecutable("install_name_tool")
+    fileprivate static func installNameToolBinaryURL() throws -> URL { try findExecutable("install_name_tool") }
 
     func cmdInsertLoadCommandRuntimePath(_ target: URL, name: String) throws {
         let rpaths = try runtimePathsOfMachO(target)
@@ -301,7 +301,7 @@ extension InjectorV3 {
             return
         }
         try cmdPseudoSign(target, force: true)
-        let retCode = try Execute.rootSpawn(binary: Self.installNameToolBinaryURL.path, arguments: [
+        let retCode = try Execute.rootSpawn(binary: try Self.installNameToolBinaryURL().path, arguments: [
             "-add_rpath", name, target.path,
         ], ddlog: logger)
         guard case let .exit(code) = retCode, code == EXIT_SUCCESS else {
@@ -311,7 +311,7 @@ extension InjectorV3 {
 
     func cmdChangeLoadCommandDylib(_ target: URL, from srcName: String, to destName: String) throws {
         try cmdPseudoSign(target, force: true)
-        let retCode = try Execute.rootSpawn(binary: Self.installNameToolBinaryURL.path, arguments: [
+        let retCode = try Execute.rootSpawn(binary: try Self.installNameToolBinaryURL().path, arguments: [
             "-change", srcName, destName, target.path,
         ], ddlog: logger)
         guard case let .exit(code) = retCode, code == EXIT_SUCCESS else {
@@ -321,14 +321,14 @@ extension InjectorV3 {
 
     // MARK: - optool
 
-    fileprivate static let optoolBinaryURL = findExecutable("optool")
+    fileprivate static func optoolBinaryURL() throws -> URL { try findExecutable("optool") }
 
     func cmdRemoveLoadCommandDylib(_ target: URL, name: String) throws {
         let dylibs = try loadedDylibsOfMachO(target)
         guard dylibs.contains(name) else {
             return
         }
-        let retCode = try Execute.rootSpawn(binary: Self.optoolBinaryURL.path, arguments: [
+        let retCode = try Execute.rootSpawn(binary: try Self.optoolBinaryURL().path, arguments: [
             "uninstall", "-p", name, "-t", target.path,
         ], ddlog: logger)
         guard case let .exit(code) = retCode, code == EXIT_SUCCESS else {
@@ -349,7 +349,7 @@ extension InjectorV3 {
 
     // MARK: - Path Finder
 
-    fileprivate static func findExecutable(_ name: String) -> URL {
+    fileprivate static func findExecutable(_ name: String) throws -> URL {
         if let url = Bundle.main.url(forResource: name, withExtension: nil) {
             return url
         }
@@ -368,6 +368,6 @@ extension InjectorV3 {
                 return execURL
             }
         }
-        fatalError("Unable to locate executable \(name)")
+        throw Error.generic(String(format: NSLocalizedString("Missing bundled component: %@", comment: ""), name))
     }
 }

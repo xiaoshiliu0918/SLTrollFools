@@ -112,10 +112,12 @@ extension InjectorV3 {
 
     // MARK: - Cydia Substrate
 
-    fileprivate static let substrateZipURL = findResource(substrateFwkName, fileExtension: "zip")
+    fileprivate static func substrateZipURL() throws -> URL {
+        try findResource(substrateFwkName, fileExtension: "zip")
+    }
 
     fileprivate func prepareSubstrate() throws -> URL {
-        try FileManager.default.unzipItem(at: Self.substrateZipURL, to: temporaryDirectoryURL)
+        try FileManager.default.unzipItem(at: try Self.substrateZipURL(), to: temporaryDirectoryURL)
 
         let fwkURL = temporaryDirectoryURL.appendingPathComponent(Self.substrateFwkName)
         try markBundlesAsInjected([fwkURL], privileged: false)
@@ -246,7 +248,7 @@ extension InjectorV3 {
         return selectedMachO
     }
 
-    fileprivate static func findResource(_ name: String, fileExtension: String) -> URL {
+    fileprivate static func findResource(_ name: String, fileExtension: String) throws -> URL {
         if let url = Bundle.main.url(forResource: name, withExtension: fileExtension) {
             return url
         }
@@ -269,6 +271,6 @@ extension InjectorV3 {
                 return execURL
             }
         }
-        fatalError("Unable to locate resource \(name)")
+        throw Error.generic(String(format: NSLocalizedString("Missing bundled resource: %@", comment: ""), name))
     }
 }

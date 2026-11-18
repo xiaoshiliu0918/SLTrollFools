@@ -52,6 +52,9 @@ struct CmdInject: ParsableCommand {
         }
         injector.useWeakReference = weakReference
         injector.injectStrategy = fastInjection ? .fast : .lexicographic
-        try injector.inject(pluginURLs, shouldPersist: false)
+        // 该子命令的语义就是"持久注入"：必须把插件登记到
+        // PersistentPlugins/<bid>/，否则 ejectAll(shouldDesist:) 无从清理，
+        // 且 App.hasPersistedAssets 永远为 false。
+        try injector.inject(pluginURLs, shouldPersist: true)
     }
 }

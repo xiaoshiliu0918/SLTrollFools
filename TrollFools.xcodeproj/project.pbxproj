@@ -115,7 +115,6 @@
 		CCF4705E2C4A464B008D8197 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CCF4705D2C4A464B008D8197 /* Assets.xcassets */; };
 		CCF470692C4A4919008D8197 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = CCF4706B2C4A4919008D8197 /* Localizable.strings */; };
 		CCF4706E2C4A4BAB008D8197 /* AppListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCF4706D2C4A4BAB008D8197 /* AppListView.swift */; };
-		AA1100012C4A4BAB00000001 /* KFStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1100022C4A4BAB00000002 /* KFStyle.swift */; };
 		CCF470732C4A4E81008D8197 /* TrollFoolsStub.m in Sources */ = {isa = PBXBuildFile; fileRef = CCF470722C4A4E81008D8197 /* TrollFoolsStub.m */; };
 		CCF5A0A42C4D45160097D48D /* AuxiliaryExecute.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCF5A0A32C4D45160097D48D /* AuxiliaryExecute.swift */; };
 		CCF5A0A62C4D45400097D48D /* AuxiliaryExecute+Spawn.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCF5A0A52C4D45400097D48D /* AuxiliaryExecute+Spawn.swift */; };
@@ -227,7 +226,6 @@
 		CCF4706A2C4A4919008D8197 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		CCF4706C2C4A491B008D8197 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		CCF4706D2C4A4BAB008D8197 /* AppListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppListView.swift; sourceTree = "<group>"; };
-		AA1100022C4A4BAB00000002 /* KFStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KFStyle.swift; sourceTree = "<group>"; };
 		CCF470712C4A4E81008D8197 /* TrollFools-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "TrollFools-Bridging-Header.h"; sourceTree = "<group>"; };
 		CCF470722C4A4E81008D8197 /* TrollFoolsStub.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TrollFoolsStub.m; sourceTree = "<group>"; };
 		CCF5A0A32C4D45160097D48D /* AuxiliaryExecute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryExecute.swift; sourceTree = "<group>"; };
@@ -301,7 +299,6 @@
 			isa = PBXGroup;
 			children = (
 				6124A0732CD2328600C52253 /* AppListCell.swift */,
-				AA1100022C4A4BAB00000002 /* KFStyle.swift */,
 				CCF4706D2C4A4BAB008D8197 /* AppListView.swift */,
 				61C7D54B2D82DBAC0064D626 /* DisclaimerView.swift */,
 				CC15490D2C4B80AF00A4173E /* EjectListView.swift */,
@@ -701,7 +698,6 @@
 				6124A06F2CD2324200C52253 /* AppListModel.swift in Sources */,
 				CCB6A1192C4A58C7000D75B0 /* OptionView.swift in Sources */,
 				CCF4706E2C4A4BAB008D8197 /* AppListView.swift in Sources */,
-				AA1100012C4A4BAB00000001 /* KFStyle.swift in Sources */,
 				614C0C6C2D7D72D4007E9184 /* IndexableScroller.swift in Sources */,
 				CC1548D32C4A743200A4173E /* SuccessView.swift in Sources */,
 				CCF350A22D7DE50900826516 /* EjectListSearchModel.swift in Sources */,

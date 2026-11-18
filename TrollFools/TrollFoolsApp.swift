@@ -24,9 +24,6 @@ struct TrollFoolsApp: SwiftUI.App {
     var body: some Scene {
         WindowGroup {
             TempHomeView()
-                // 这套界面是纯深色设计（KFD P2），
-                // 锁深色避免系统 Alert / 键盘 / 控件回到浅色主题
-                .preferredColorScheme(.dark)
         }
     }
 }
