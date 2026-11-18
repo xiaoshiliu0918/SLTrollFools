@@ -1406,6 +1406,9 @@ private struct LiquidTabBar: View {
     /// 所以在 `onChange` 里统一补一次事务。
     @State private var visual: Int = 0
 
+    /// 手指按下的槽位，用来做按下时的轻微内缩。
+    @State private var pressed: Int? = nil
+
     @Namespace private var indicator
 
     @Environment(\.colorScheme) private var colorScheme
@@ -1418,13 +1421,42 @@ private struct LiquidTabBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(items.indices, id: \.self) { index in
-                tabButton(index: index)
+        // 整条底栏铺一个 DragGesture，点击和滑动都由它判定：
+        // - 位移超过 18pt → 滑动手势，按方向换相邻栏；
+        // - 否则按落点横坐标算槽位，当作点击。
+        // 不再用 Button —— Button 会把手势吃掉，这正是之前「只能点、滑不动」的原因。
+        GeometryReader { geo in
+            let inner = max(geo.size.width - 10, 1)          // 减掉左右各 5pt 内边距
+            let slot = inner / CGFloat(max(items.count, 1))
+
+            HStack(spacing: 0) {
+                ForEach(items.indices, id: \.self) { index in
+                    tabLabel(index: index)
+                }
             }
+            .padding(5)
+            .liquidGlass(cornerRadius: 28)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let index = slotIndex(at: value.location.x, slot: slot)
+                        if pressed != index {
+                            withAnimation(.easeOut(duration: 0.12)) { pressed = index }
+                        }
+                    }
+                    .onEnded { value in
+                        withAnimation(.easeOut(duration: 0.12)) { pressed = nil }
+                        let dx = value.translation.width
+                        if abs(dx) > 18 {
+                            select(dx < 0 ? selection + 1 : selection - 1)
+                        } else {
+                            select(slotIndex(at: value.location.x, slot: slot))
+                        }
+                    }
+            )
         }
-        .padding(5)
-        .liquidGlass(cornerRadius: 28)
+        .frame(height: 60)
         // 悬浮在滚动内容之上，再加一道大半径投影把它从列表里"抬"起来
         .shadow(
             color: Color.black.opacity(isDark ? 0.42 : 0.10),
@@ -1438,55 +1470,43 @@ private struct LiquidTabBar: View {
                 visual = newValue
             }
         }
-        .contentShape(Rectangle())
-        .highPriorityGesture(swipeGesture)
     }
 
-    /// 在底栏上左右拖也能换栏。
-    ///
-    /// `minimumDistance` 给 12pt：轻点不会误判成拖动，按钮的点击照常触发；
-    /// 甩动超过 24pt 才算一次换栏，避免手指落点抖动就跳页。
-    private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 12)
-            .onEnded { value in
-                let dx = value.translation.width
-                guard abs(dx) > 24 else { return }
-                let target = dx < 0
-                    ? min(selection + 1, items.count - 1)
-                    : max(selection - 1, 0)
-                guard target != selection else { return }
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    selection = target
-                }
-            }
+    /// 把落点横坐标换算成槽位（0 起）。手势坐标相对整条栏，
+    /// 先减掉 5pt 内边距，再除以单槽宽度。
+    private func slotIndex(at x: CGFloat, slot: CGFloat) -> Int {
+        let raw = Int((x - 5) / max(slot, 1))
+        return min(max(raw, 0), items.count - 1)
     }
 
-    private func tabButton(index: Int) -> some View {
+    private func select(_ index: Int) {
+        guard index != selection else { return }
+        // 页面平移动画；胶囊的滑移由 onChange 里的 spring 单独驱动，
+        // 两者一个"稳"一个"弹"，叠起来才像液体被推过去。
+        withAnimation(.easeInOut(duration: 0.25)) {
+            selection = index
+        }
+    }
+
+    private func tabLabel(index: Int) -> some View {
         let item = items[index]
         let selected = visual == index
+        let held = pressed == index && !selected
 
-        return Button {
-            guard selection != index else { return }
-            // 页面平移动画；胶囊的滑移由 onChange 里的 spring 单独驱动，
-            // 两者一个"稳"一个"弹"，叠起来才像液体被推过去。
-            withAnimation(.easeInOut(duration: 0.25)) {
-                selection = index
-            }
-        } label: {
-            VStack(spacing: 3) {
-                Image(systemName: item.icon)
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(height: 19)
-                Text(item.title)
-                    .font(.system(size: 10, weight: .medium))
-            }
-            .foregroundColor(selected ? .blue : .secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(selectedCapsule(visible: selected))
-            .contentShape(Rectangle())
+        return VStack(spacing: 3) {
+            Image(systemName: item.icon)
+                .font(.system(size: 17, weight: .semibold))
+                .frame(height: 19)
+            Text(item.title)
+                .font(.system(size: 10, weight: .medium))
         }
-        .buttonStyle(PlainButtonStyle())
+        .foregroundColor(selected ? .blue : .secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(selectedCapsule(visible: selected))
+        // 按下时轻微内缩，补上原来 Button 的按压反馈
+        .scaleEffect(held ? 0.94 : 1.0)
+        .contentShape(Rectangle())
     }
 
     /// 选中态胶囊。和卡片同一套「提亮半透底 → 真模糊 → 透光 → 顶棱」顺序，
@@ -1642,9 +1662,11 @@ struct TempHomeView: View {
         }
 
         var body: some View {
-            NavigationView {
-                ZStack {
-                    VStack(spacing: 0) {
+            // 不再套 NavigationView：分页 TabView 里三页各自持有导航栏时，
+            // 三个 navigationTitle 会同时生效叠在左上角，而且每页的
+            // UIScrollView 会把分页左右滑动的手势吃掉。改成纯内容视图，
+            // 由页面自己排布，标题也不再需要。
+            VStack(spacing: 0) {
                         // 搜索栏（始终显示，不受列表状态影响）
                         HStack(spacing: 8) {
                             Image(systemName: "magnifyingglass")
@@ -1760,25 +1782,11 @@ struct TempHomeView: View {
                                 .padding(.bottom, 92)
                             }
                         }
-                    }
-                }
-                // 壁纸走 background 而不是放进 ZStack：
-                // 它内部带 ignoresSafeArea，作为子视图会把整个 ZStack 撑到全屏，
-                // 页面内容于是从状态栏底下起排，被大标题压住。
-                .background(LiquidGlassBackground())
-                .navigationBarTitleDisplayMode(.large)
-                .navigationTitle("应用")
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        if let app = targetSelection.selectedApp {
-                            Text("已选：\(app.name)")
-                                .font(.footnote)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
             }
-            .navigationViewStyle(.stack)
+            // 壁纸走 background 而不是放进 ZStack：
+            // 它内部带 ignoresSafeArea，作为子视图会把整个 VStack 撑到全屏，
+            // 页面内容于是从状态栏底下起排。
+            .background(LiquidGlassBackground())
         }
     }
 
@@ -1796,9 +1804,8 @@ struct TempHomeView: View {
         @State private var pendingSessions: [TempInjectManager.PendingSession] = []
 
         var body: some View {
-            NavigationView {
-                ZStack {
-                    ScrollView {
+            // 同「应用」页：去掉 NavigationView，避免多页导航栏叠加与分页手势冲突
+            ScrollView {
                         VStack(spacing: 0) {
                             // 已选目标应用
                             GlassSectionTitle(text: "目标应用")
@@ -2060,11 +2067,9 @@ struct TempHomeView: View {
                                 .padding(.bottom, 100)
                         }
                         .padding(.horizontal, 16)
-                    }
-                }
+                        .padding(.top, 12)
+            }
                 .background(LiquidGlassBackground())
-                .navigationBarTitleDisplayMode(.large)
-                .navigationTitle("注入")
                 .onAppear {
                     reloadPlugins()
                     reloadPending()
@@ -2073,8 +2078,6 @@ struct TempHomeView: View {
                     // 看门狗起失败 / 还原失败都会写日志，这里顺带刷新待还原列表
                     reloadPending()
                 }
-            }
-            .navigationViewStyle(.stack)
         }
 
         // MARK: - 插件分组
@@ -2170,10 +2173,7 @@ struct TempHomeView: View {
     struct StashTabView: View {
 
         var body: some View {
-            NavigationView {
-                StashView()
-            }
-            .navigationViewStyle(.stack)
+            StashView()
         }
     }
 }
@@ -2193,9 +2193,28 @@ struct StashView: View {
     private let stash = StashManager.shared
 
     var body: some View {
-        ZStack {
-            ScrollView {
+        // 去掉了 NavigationView：编辑入口从导航栏右上角挪进内容区
+        ScrollView {
                 VStack(spacing: 0) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) { isEditing.toggle() }
+                        } label: {
+                            Text(isEditing ? "完成" : "编辑")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(groups.isEmpty ? Color.secondary.opacity(0.35) : .blue)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .liquidGlass(cornerRadius: 12)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .disabled(groups.isEmpty)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
                     Text("暂存箱是「插件导入」文件夹的实时镜像：文件夹里有什么，这里就显示什么；在这里删除，文件夹里的对应文件会一并删除。点分组标题可展开／收起。")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -2226,22 +2245,8 @@ struct StashView: View {
                     actionBlock
                 }
                 .padding(.bottom, 130)
-            }
         }
         .background(LiquidGlassBackground())
-        .navigationTitle("暂存箱")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                // 不用 if 包 Button：iOS 14 的 ToolbarItem 对条件视图支持不稳，
-                // 换成透明度 + disabled，按钮位置也不会跳。
-                Button(isEditing ? "完成" : "编辑") {
-                    withAnimation(.easeInOut(duration: 0.18)) { isEditing.toggle() }
-                }
-                .opacity(groups.isEmpty ? 0 : 1)
-                .disabled(groups.isEmpty)
-            }
-        }
         .onAppear {
             loadCollapsed()
             reload()
