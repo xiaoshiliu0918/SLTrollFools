@@ -2356,11 +2356,15 @@ struct StashView: View {
             Button {
                 toggleCollapsed(group.category)
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     Image(systemName: collapsed.contains(group.category) ? "chevron.right" : "chevron.down")
                         .font(.caption2.weight(.semibold))
                         .foregroundColor(.secondary)
                         .frame(width: 12)
+                    // 与注入页的分组标题保持一致：折叠箭头 + 蓝色文件夹 + 分类名 + 数量
+                    Image(systemName: "folder.fill")
+                        .font(.caption)
+                        .foregroundColor(.blue)
                     Text(group.category)
                         .font(.footnote)
                         .fontWeight(.medium)
