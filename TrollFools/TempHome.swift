@@ -1385,6 +1385,147 @@ private struct LiquidGlassBackground: View {
     }
 }
 
+// MARK: - 底部液态玻璃 TabBar
+
+/// 自定义底部栏：磨砂玻璃外壳 + 选中态液态玻璃胶囊。
+///
+/// 为什么不用系统 TabBar：
+/// - 系统的选中态只有一层染色，做不出「提亮底 + 透光 + 顶棱 + 投影」的体积；
+/// - 系统 TabBar 的选中胶囊位置写死，没法跟着翻页手势滑。
+///
+/// 选中胶囊用 `matchedGeometryEffect` 在三个槽位之间移动 —— 切换时是同一块
+/// 玻璃滑过去，而不是两个色块各自淡入淡出，这就是「液态」的来源。
+private struct LiquidTabBar: View {
+
+    @Binding var selection: Int
+    let items: [(icon: String, title: String)]
+
+    /// 胶囊当前所在的槽位。与 `selection` 分开是为了动画：
+    /// 翻页手势改 `selection` 时没有 `withAnimation` 包裹，
+    /// 直接拿它驱动 `matchedGeometryEffect` 会让胶囊瞬移，
+    /// 所以在 `onChange` 里统一补一次事务。
+    @State private var visual: Int = 0
+
+    @Namespace private var indicator
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var isDark: Bool { colorScheme == .dark }
+
+    init(selection: Binding<Int>, items: [(icon: String, title: String)]) {
+        self._selection = selection
+        self.items = items
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(items.indices, id: \.self) { index in
+                tabButton(index: index)
+            }
+        }
+        .padding(5)
+        .liquidGlass(cornerRadius: 28)
+        // 悬浮在滚动内容之上，再加一道大半径投影把它从列表里"抬"起来
+        .shadow(
+            color: Color.black.opacity(isDark ? 0.42 : 0.10),
+            radius: 18,
+            x: 0,
+            y: 8
+        )
+        .onAppear { visual = selection }
+        .onChange(of: selection) { newValue in
+            withAnimation(.interpolatingSpring(stiffness: 320, damping: 27)) {
+                visual = newValue
+            }
+        }
+    }
+
+    private func tabButton(index: Int) -> some View {
+        let item = items[index]
+        let selected = visual == index
+
+        return Button {
+            guard selection != index else { return }
+            // 页面平移动画；胶囊的滑移由 onChange 里的 spring 单独驱动，
+            // 两者一个"稳"一个"弹"，叠起来才像液体被推过去。
+            withAnimation(.easeInOut(duration: 0.25)) {
+                selection = index
+            }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(height: 19)
+                Text(item.title)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundColor(selected ? .blue : .secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(selectedCapsule(visible: selected))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    /// 选中态胶囊。和卡片同一套「提亮半透底 → 真模糊 → 透光 → 顶棱」顺序，
+    /// 只是曲率更小、阴影更贴，避免在窄条里显得糊成一团。
+    @ViewBuilder
+    private func selectedCapsule(visible: Bool) -> some View {
+        if visible {
+            ZStack {
+                Capsule()
+                    .fill(isDark
+                        ? Color(red: 146 / 255, green: 184 / 255, blue: 242 / 255).opacity(0.18)
+                        : Color.white.opacity(0.80))
+
+                if #available(iOS 15.0, *) {
+                    Capsule().fill(.ultraThinMaterial)
+                }
+
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            stops: isDark
+                                ? [
+                                    .init(color: Color.white.opacity(0.14), location: 0.00),
+                                    .init(color: Color.white.opacity(0.00), location: 0.55),
+                                    .init(color: Color.black.opacity(0.16), location: 1.00)
+                                  ]
+                                : [
+                                    .init(color: Color.white.opacity(0.55), location: 0.00),
+                                    .init(color: Color.white.opacity(0.05), location: 0.55),
+                                    .init(color: Color.white.opacity(0.00), location: 1.00)
+                                  ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
+                Capsule()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(isDark ? 0.40 : 1.00),
+                                Color.white.opacity(isDark ? 0.10 : 0.55)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            }
+            .shadow(
+                color: Color.black.opacity(isDark ? 0.35 : 0.09),
+                radius: 7,
+                x: 0,
+                y: 3
+            )
+            .matchedGeometryEffect(id: "tabIndicator", in: indicator)
+        }
+    }
+}
+
 // MARK: - Home View (底部三栏：应用 / 注入 / 暂存箱)
 
 struct TempHomeView: View {
@@ -1393,67 +1534,63 @@ struct TempHomeView: View {
     @ObservedObject private var engine = ImportEngine.shared
     @State private var selectedTab = 0
 
+    /// 切栏触感。`UISelectionFeedbackGenerator` 是最轻的一档（系统 Haptic Touch
+    /// 里"选择器滚过一格"那种），比 `UIImpactFeedbackGenerator` 的 .light 还轻，
+    /// 连点三栏也不会觉得吵。
+    ///
+    /// 生成器要复用同一个实例：每次 new 一个会重新走 Taptic Engine 的唤醒流程，
+    /// 首次触发会有几十毫秒延迟，手感发"空"。
+    private let haptic = UISelectionFeedbackGenerator()
+
+    private static let tabs: [(icon: String, title: String)] = [
+        ("square.grid.2x2.fill", "应用"),
+        ("syringe.fill", "注入"),
+        ("shippingbox.fill", "暂存箱")
+    ]
+
     var body: some View {
-        NavigationView {
+        ZStack(alignment: .bottom) {
+            // 分页式 TabView：左右滑动即可切栏，底部圆点由自定义 TabBar 取代。
             TabView(selection: $selectedTab) {
-                // 首项：应用（选择目标进程）
                 AppTabView()
-                    .tabItem {
-                        Label("应用", systemImage: "square.grid.2x2.fill")
-                    }
                     .tag(0)
 
-                // 中间项：注入（选插件并注入）
                 InjectTabView()
-                    .tabItem {
-                        Label("注入", systemImage: "syringe.fill")
-                    }
                     .tag(1)
 
-                // 第三项：暂存箱
                 StashTabView()
-                    .tabItem {
-                        Label("暂存箱", systemImage: "shippingbox.fill")
-                    }
                     .tag(2)
             }
-            .accentColor(.blue)
-            .onAppear {
-                Self.configureTabBarAppearance()
-                // cleanupOrphans may synchronously run a full restore via the
-                // CLI; keep it off the main thread to avoid blocking the UI.
-                DispatchQueue.global(qos: .utility).async {
-                    TempInjectManager.shared.cleanupOrphans()
-                }
-                ImportEngine.shared.syncImportFolder()
-            }
-            .onOpenURL { url in
-                // Receive files shared in from Files app / WeChat "open in" etc.
-                ImportEngine.shared.log("📩 收到共享文件：\(url.lastPathComponent)")
-                ImportEngine.shared.importURLs([url], source: "共享")
-            }
-            .alert(item: $engine.notice) { item in
-                Alert(title: Text(item.title), message: Text(item.message), dismissButton: .default(Text("好")))
-            }
-        }
-        .navigationViewStyle(.stack)
-    }
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
 
-    /// 底部 Tab 栏：磨砂玻璃，透出背后的壁纸。
-    ///
-    /// 用 `configureWithTransparentBackground` + 材质模糊，而不是默认背景 ——
-    /// 默认背景在 iOS 15 之后会铺一层不透明底色，壁纸透不上来，
-    /// TabBar 就成了一根贴上去的灰条，和上面的玻璃卡片断成两种材质。
-    private static func configureTabBarAppearance() {
-        if #available(iOS 15.0, *) {
-            let appearance = UITabBarAppearance()
-            appearance.configureWithTransparentBackground()
-            appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
-            appearance.backgroundColor = .clear
-            UITabBar.appearance().standardAppearance = appearance
-            UITabBar.appearance().scrollEdgeAppearance = appearance
+            LiquidTabBar(selection: $selectedTab, items: Self.tabs)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
         }
-        // iOS 14：TabView 默认自带系统磨砂，无需额外配置
+        .accentColor(.blue)
+        .onChange(of: selectedTab) { _ in
+            // 点击与滑动都会走到这里 —— 两种切换方式的手感因此一致。
+            haptic.selectionChanged()
+            // 立刻预热门下一次触发，连续切换时不会掉帧。
+            haptic.prepare()
+        }
+        .onAppear {
+            haptic.prepare()
+            // cleanupOrphans may synchronously run a full restore via the
+            // CLI; keep it off the main thread to avoid blocking the UI.
+            DispatchQueue.global(qos: .utility).async {
+                TempInjectManager.shared.cleanupOrphans()
+            }
+            ImportEngine.shared.syncImportFolder()
+        }
+        .onOpenURL { url in
+            // Receive files shared in from Files app / WeChat "open in" etc.
+            ImportEngine.shared.log("📩 收到共享文件：\(url.lastPathComponent)")
+            ImportEngine.shared.importURLs([url], source: "共享")
+        }
+        .alert(item: $engine.notice) { item in
+            Alert(title: Text(item.title), message: Text(item.message), dismissButton: .default(Text("好")))
+        }
     }
 
     // MARK: 首项 · 应用
@@ -1598,7 +1735,10 @@ struct TempHomeView: View {
                                     }
                                 }
                                 .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
+                                .padding(.top, 12)
+                                // 自定义 TabBar 悬浮在内容之上，底部留出它的高度，
+                                // 否则最后一张卡会被压住（系统 TabBar 原本会自动 inset）
+                                .padding(.bottom, 92)
                             }
                         }
                     }
@@ -1889,34 +2029,14 @@ struct TempHomeView: View {
                             .disabled(!canInject)
                             .padding(.top, 20)
 
-                            // 运行日志
-                            if !engine.logs.isEmpty {
-                                GlassSectionTitle(text: "运行日志")
-
-                                VStack(spacing: 9) {
-                                    ForEach(Array(engine.logs.suffix(6).enumerated()), id: \.offset) { _, line in
-                                        HStack(alignment: .top, spacing: 10) {
-                                            Text(line)
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                                .lineLimit(3)
-                                                .multilineTextAlignment(.leading)
-                                            Spacer(minLength: 0)
-                                        }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 12)
-                                        .liquidGlass()
-                                    }
-                                }
-                            }
-
                             // 版本号取自 Info.plist，避免界面写死 v1.0 与实际包版本（4.3-253）不一致
                             Text("石榴动态注入 v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") · 基于 TrollFools")
                                 .font(.caption2)
                                 .foregroundColor(.secondary.opacity(0.7))
                                 .frame(maxWidth: .infinity)
-                                .padding(.top, 24)
-                                .padding(.bottom, 24)
+                                .padding(.top, 20)
+                                // 给悬浮 TabBar 让位
+                                .padding(.bottom, 100)
                         }
                         .padding(.horizontal, 16)
                     }
@@ -2084,9 +2204,8 @@ struct StashView: View {
                     }
 
                     actionBlock
-                    logBlock
                 }
-                .padding(.bottom, 104)
+                .padding(.bottom, 130)
             }
         }
         .navigationTitle("暂存箱")
@@ -2115,30 +2234,56 @@ struct StashView: View {
         }
         .sheet(isPresented: $isCreateCategoryPresented) {
             NavigationView {
-                Form {
-                    Section(footer: Text("分类文件夹会在 /var/mobile/Documents/插件导入 目录下创建（暂存箱同步出现），之后把对应 dylib 拖进该文件夹即可自动归类。")) {
-                        TextField("分类名称（如：王者荣耀）", text: $newCategoryName)
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
-                        Button {
-                            let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !name.isEmpty, name != ".", name != "..", !name.contains("/") {
-                                let folderURL = ImportEngine.importFolderURL
-                                    .appendingPathComponent(name, isDirectory: true)
-                                try? FileManager.default.createDirectory(
-                                    at: folderURL, withIntermediateDirectories: true
-                                )
-                                ImportEngine.shared.log("📁 已创建分类：\(name)")
-                                ImportEngine.shared.syncImportFolder()
-                                reload()
+                ZStack {
+                    LiquidGlassBackground()
+
+                    VStack(spacing: 14) {
+                        Text("分类文件夹会创建在「插件导入」目录下，暂存箱同步出现。之后把对应 dylib 拖进该文件夹即可自动归类。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 20)
+
+                        // 输入框与主界面搜索框同款玻璃：
+                        // 系统 Form 那层灰底会从磨砂背景里切出一整块，很突兀。
+                        HStack(spacing: 8) {
+                            Image(systemName: "folder")
+                                .font(.system(size: 15))
+                                .foregroundColor(.secondary)
+                            TextField("分类名称（如：王者荣耀）", text: $newCategoryName)
+                                .font(.system(size: 16))
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                            if !newCategoryName.isEmpty {
+                                Button {
+                                    newCategoryName = ""
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            newCategoryName = ""
-                            isCreateCategoryPresented = false
-                        } label: {
-                            Text("创建")
-                                .fontWeight(.semibold)
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 11)
+                        .liquidGlass(cornerRadius: 14)
+                        .padding(.horizontal, 16)
+
+                        // 与「立即同步」「新建分类文件夹」同一套行样式
+                        Button {
+                            createCategory()
+                        } label: {
+                            actionRow("folder.badge.plus", "创建分类文件夹")
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .opacity(canCreateCategory ? 1 : 0.45)
+                        .disabled(!canCreateCategory)
+
+                        Spacer(minLength: 0)
                     }
+                    .padding(.top, 14)
                 }
                 .navigationTitle("新建分类")
                 .navigationBarTitleDisplayMode(.inline)
@@ -2153,6 +2298,29 @@ struct StashView: View {
             }
             .navigationViewStyle(.stack)
         }
+    }
+
+    // MARK: - 新建分类
+
+    /// 名称合法性：非空、不是 . / ..、不含路径分隔符 —— 否则会建到上级目录去。
+    private var canCreateCategory: Bool {
+        let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !name.isEmpty && name != "." && name != ".." && !name.contains("/")
+    }
+
+    private func createCategory() {
+        let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canCreateCategory else { return }
+        let folderURL = ImportEngine.importFolderURL
+            .appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: folderURL, withIntermediateDirectories: true
+        )
+        ImportEngine.shared.log("📁 已创建分类：\(name)")
+        ImportEngine.shared.syncImportFolder()
+        reload()
+        newCategoryName = ""
+        isCreateCategoryPresented = false
     }
 
     // MARK: - 分组
@@ -2328,42 +2496,7 @@ struct StashView: View {
         .padding(.top, 22)
     }
 
-    // MARK: - 日志
-
-    @ViewBuilder
-    private var logBlock: some View {
-        if !engine.logs.isEmpty {
-            VStack(spacing: 0) {
-                HStack(spacing: 4) {
-                    Text("导入日志")
-                        .font(.footnote)
-                        .fontWeight(.medium)
-                        .foregroundColor(.secondary)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                .padding(.bottom, 8)
-
-                VStack(spacing: 9) {
-                    ForEach(Array(engine.logs.suffix(10).enumerated()), id: \.offset) { _, line in
-                        HStack(alignment: .top, spacing: 10) {
-                            Text(line)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(3)
-                                .multilineTextAlignment(.leading)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 11)
-                        .liquidGlass()
-                    }
-                }
-                .padding(.horizontal, 16)
-            }
-        }
-    }
+    // MARK: - 日志（已不在界面展示）
 
     private func delete(_ item: StashManager.DeepItem) {
         stash.removePlugin(item.url)
